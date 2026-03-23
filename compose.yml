@@ -1,0 +1,36 @@
+services:
+  database:
+    image: timescale/timescaledb:latest-pg17
+    container_name: bourse-database
+    command: postgres -c shared_preload_libraries=timescaledb
+    networks: [ boursenet ]
+    environment:
+      - PGDATA=/var/lib/postgresql/data/timescaledb
+      - POSTGRES_DB=bourse
+      - POSTGRES_USER=bourse
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - /tmp/bourse/timescaledb:/var/lib/postgresql/data/timescaledb
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U bourse bourse" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bourse-dashboard
+    depends_on:
+      - database
+    networks: [ boursenet ]
+    ports:
+      - "8050:8050"
+    restart: unless-stopped
+    volumes:
+      - /home/baptou/project/EC/teaching/pybd/data:/mnt/data
+
+networks:
+  boursenet:
+    driver: bridge
