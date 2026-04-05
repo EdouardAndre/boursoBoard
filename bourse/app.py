@@ -1,9 +1,8 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import html, dcc, dash_table, Input, Output, State, callback
+from dash import html, dcc, dash_table, Input, Output, callback
 import plotly.graph_objects as go
 import pandas as pd
-import numpy as np
 
 import timescaledb_model as tsdb
 from etl import store_files
@@ -42,21 +41,6 @@ def get_daystocks(cids, start_date, end_date):
         JOIN companies c ON c.id = d.cid
         WHERE d.cid IN (%s) AND d.date >= '%s' AND d.date <= '%s'
         ORDER BY d.date
-    """ % (cid_list, start_date, end_date)
-    df = db.df_query(query, parse_dates=["date"])
-    return df
-
-
-def get_stocks_intraday(cids, start_date, end_date):
-    if not cids:
-        return pd.DataFrame()
-    cid_list = ",".join(str(c) for c in cids)
-    query = """
-        SELECT s.date, s.cid, s.value, s.volume, c.name
-        FROM stocks s
-        JOIN companies c ON c.id = s.cid
-        WHERE s.cid IN (%s) AND s.date >= '%s' AND s.date <= '%s'
-        ORDER BY s.date
     """ % (cid_list, start_date, end_date)
     df = db.df_query(query, parse_dates=["date"])
     return df

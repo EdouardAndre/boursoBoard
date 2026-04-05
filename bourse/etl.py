@@ -17,16 +17,10 @@ def _parse_bourso_file(filepath: str):
         return None
 
     dt_str = match.group(1)
-    try:
-        dt = pd.to_datetime(dt_str)
-    except Exception:
-        return None
+    dt = pd.to_datetime(dt_str)
 
-    try:
-        with open(filepath, "rb") as f:
-            df = pickle.load(f)
-    except Exception:
-        return None
+    with open(filepath, "rb") as f:
+        df = pickle.load(f)
 
     if df.empty:
         return None
@@ -106,11 +100,8 @@ def _is_file_done(db: TSDB, filename: str) -> bool:
 
 
 def _mark_file_done(db: TSDB, filename: str):
-    try:
-        db.raw_query("INSERT INTO file_done (name) VALUES (%s)", (filename,))
-        db.commit()
-    except Exception:
-        db.commit()
+    db.raw_query("INSERT INTO file_done (name) VALUES (%s)", (filename,))
+    db.commit()
 
 
 def _flush_stocks(db: TSDB, df: pd.DataFrame):
@@ -180,14 +171,10 @@ def _store_euronext_files(start: str, end: str, db: TSDB):
         if _is_file_done(db, basename):
             continue
 
-        try:
-            if fpath.endswith(".csv"):
-                df = _parse_euronext_csv(fpath)
-            else:
-                df = _parse_euronext_xlsx(fpath)
-        except Exception:
-            _mark_file_done(db, basename)
-            continue
+        if fpath.endswith(".csv"):
+            df = _parse_euronext_csv(fpath)
+        else:
+            df = _parse_euronext_xlsx(fpath)
 
         if df.empty:
             _mark_file_done(db, basename)
@@ -274,23 +261,10 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
                 files_by_day[day_str] = []
             files_by_day[day_str].append(os.path.join(year_path, f))
 
-    total_days = len(files_by_day)
+    if not files_by_day:
+        return
 
     company_cache = {}
-
-    first_day = sorted(files_by_day.keys())[0]
-    for fpath in files_by_day[first_day][:2]:
-        result = _parse_bourso_file(fpath)
-        if result is not None:
-            for _, row in result.iterrows():
-                symbol = row["symbol"]
-                name = row["name"]
-                if symbol not in company_cache:
-                    market_alias = _detect_market_alias_from_bourso_symbol(symbol)
-                    cid = _get_or_create_company(db, name, symbol, market_alias=market_alias)
-                    company_cache[symbol] = cid
-
-    days_processed = 0
 
     for day_str in sorted(files_by_day.keys()):
         day_files = files_by_day[day_str]
@@ -340,8 +314,6 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
 
         _flush_daystocks(db, daily)
 
-        days_processed += 1
-
     _mark_file_done(db, done_key)
 
 
@@ -350,5 +322,3 @@ def store_files(start: str, end: str, website: str, db: TSDB):
         _store_bourso_files(start, end, db)
     elif website == "euronext":
         _store_euronext_files(start, end, db)
-    else:
-        raise ValueError(f"Unknown website: {website}. Use 'bourso' or 'euronext'.")
