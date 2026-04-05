@@ -12,4 +12,5 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "sqlalchemy>=2.0.48",
     "sqlalchemy-timescaledb>=0.4.1",
+    "openpyxl>=3.1.0",
 ]
