@@ -8,8 +8,6 @@ import numpy as np
 import timescaledb_model as tsdb
 from etl import store_files
 
-from loguru import logger
-
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 app = dash.Dash(
     __name__,
@@ -18,6 +16,15 @@ app = dash.Dash(
     external_stylesheets=external_stylesheets,
 )
 db = tsdb.TimescaleStockMarketModel("bourse", "bourse", "database", "password")
+
+
+def configure_server_output():
+    serving = __import__("werkzeug.serving", fromlist=["BaseWSGIServer", "_log"])
+
+    def log_startup_once(self):
+        serving._log("info", f"Running on http://127.0.0.1:{self.port}")
+
+    serving.BaseWSGIServer.log_startup = log_startup_once
 
 def get_companies():
     """Get list of companies from the database."""
@@ -149,7 +156,6 @@ app.layout = dbc.Container(
 def init_controls(_):
     """Populate the stock selector and date range on page load."""
     companies = get_companies()
-    logger.info(f"Found {len(companies)} companies in database")
     options = [{"label": row["name"], "value": row["id"]} for _, row in companies.iterrows()]
 
     dates = db.df_query("SELECT MIN(date) as min_d, MAX(date) as max_d FROM daystocks")
@@ -157,12 +163,10 @@ def init_controls(_):
         dates = db.df_query("SELECT MIN(date) as min_d, MAX(date) as max_d FROM stocks")
 
     if dates.empty or pd.isna(dates["min_d"].iloc[0]):
-        logger.warning("No date data found in daystocks or stocks")
         return options, None, None, None, None
 
     min_d = pd.to_datetime(dates["min_d"].iloc[0]).date()
     max_d = pd.to_datetime(dates["max_d"].iloc[0]).date()
-    logger.info(f"Date range: {min_d} to {max_d}")
     return options, str(min_d), str(max_d), str(min_d), str(max_d)
 
 
@@ -416,9 +420,7 @@ def render_performance(cids, start_date, end_date):
 
 
 if __name__ == "__main__":
-    logger.info("Importing data into the database")
     store_files("2020-05-01", "2022-09-16", "euronext", db)
     store_files("2020-01-01", "2022-01-01", "bourso", db)
-    logger.info("Import done")
-    logger.info("Starting dashboard server")
+    configure_server_output()
     app.run(host="0.0.0.0", port=8050, debug=False)
