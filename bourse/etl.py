@@ -1,26 +1,13 @@
-import time
 import os
 import pickle
 import re
-import warnings
-from collections import defaultdict
 
 import pandas as pd
-from loguru import logger
 
 import timescaledb_model as tsdb
 
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
 TSDB = tsdb.TimescaleStockMarketModel
 DATADIR = "/mnt/data/"
-
-
-class _CompatUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
-        if module.startswith("pandas.indexes"):
-            module = module.replace("pandas.indexes", "pandas.core.indexes")
-        return super().find_class(module, name)
 
 
 def _parse_bourso_file(filepath: str):
@@ -37,7 +24,7 @@ def _parse_bourso_file(filepath: str):
 
     try:
         with open(filepath, "rb") as f:
-            df = _CompatUnpickler(f).load()
+            df = pickle.load(f)
     except Exception:
         return None
 
@@ -134,7 +121,6 @@ def _flush_stocks(db: TSDB, df: pd.DataFrame):
     out["value"] = out["value"].astype("float32")
     out["volume"] = out["volume"].astype("float32")
     db.df_write(out, "stocks", commit=True)
-    logger.info(f"Flushed {len(out)} stock records")
 
 
 def _flush_daystocks(db: TSDB, df: pd.DataFrame):
@@ -146,7 +132,6 @@ def _flush_daystocks(db: TSDB, df: pd.DataFrame):
         out[col] = out[col].astype("float32")
     out["cid"] = out["cid"].astype("int16")
     db.df_write(out, "daystocks", commit=True)
-    logger.info(f"Flushed {len(out)} daystocks records")
 
 
 def _detect_market_alias_from_bourso_symbol(symbol: str) -> str:
@@ -175,7 +160,6 @@ def _store_euronext_files(start: str, end: str, db: TSDB):
     euronext_dir = os.path.join(DATADIR, "euronext")
 
     if not os.path.isdir(euronext_dir):
-        logger.warning(f"Euronext directory not found: {euronext_dir}")
         return
 
     all_files = sorted(
@@ -183,8 +167,6 @@ def _store_euronext_files(start: str, end: str, db: TSDB):
         for f in os.listdir(euronext_dir)
         if f.endswith(".csv") or f.endswith(".xlsx")
     )
-    logger.info(f"Found {len(all_files)} euronext files")
-
     company_cache = {}
     stocks_rows = []
     daystocks_rows = []
@@ -198,15 +180,12 @@ def _store_euronext_files(start: str, end: str, db: TSDB):
         if _is_file_done(db, basename):
             continue
 
-        logger.info(f"Processing {basename}")
-
         try:
             if fpath.endswith(".csv"):
                 df = _parse_euronext_csv(fpath)
             else:
                 df = _parse_euronext_xlsx(fpath)
-        except Exception as e:
-            logger.error(f"Error reading {fpath}: {e}")
+        except Exception:
             _mark_file_done(db, basename)
             continue
 
@@ -270,15 +249,13 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
     bourso_dir = os.path.join(DATADIR, "bourso")
 
     if not os.path.isdir(bourso_dir):
-        logger.warning(f"Bourso directory not found: {bourso_dir}")
         return
 
     done_key = f"bourso_all_{start}_{end}"
     if _is_file_done(db, done_key):
-        logger.info("Bourso data already imported for this range, skipping")
         return
 
-    files_by_day = defaultdict(list)
+    files_by_day = {}
     for year_dir in sorted(os.listdir(bourso_dir)):
         year_path = os.path.join(bourso_dir, year_dir)
         if not os.path.isdir(year_path):
@@ -293,11 +270,11 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
             day_dt = pd.to_datetime(day_str)
             if day_dt < start_dt or day_dt >= end_dt:
                 continue
+            if day_str not in files_by_day:
+                files_by_day[day_str] = []
             files_by_day[day_str].append(os.path.join(year_path, f))
 
     total_days = len(files_by_day)
-    total_files = sum(len(v) for v in files_by_day.values())
-    logger.info(f"Bourso: {total_files} files across {total_days} days")
 
     company_cache = {}
 
@@ -312,8 +289,6 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
                     market_alias = _detect_market_alias_from_bourso_symbol(symbol)
                     cid = _get_or_create_company(db, name, symbol, market_alias=market_alias)
                     company_cache[symbol] = cid
-
-    logger.info(f"Created/cached {len(company_cache)} companies from first day")
 
     days_processed = 0
 
@@ -366,32 +341,14 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
         _flush_daystocks(db, daily)
 
         days_processed += 1
-        if days_processed % 50 == 0:
-            logger.info(f"Bourso: {days_processed}/{total_days} days done")
 
     _mark_file_done(db, done_key)
-    logger.info(f"Bourso import complete: {days_processed} days, all intraday data stored")
 
 
-def timer_decorator(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        print(f"{func.__name__} run in {(end_time - start_time):.2f} seconds.")
-        return result
-    return wrapper
-
-
-@timer_decorator
 def store_files(start: str, end: str, website: str, db: TSDB):
-    logger.info(f"Loading {website} data from {start} to {end}")
-
     if website == "bourso":
         _store_bourso_files(start, end, db)
     elif website == "euronext":
         _store_euronext_files(start, end, db)
     else:
         raise ValueError(f"Unknown website: {website}. Use 'bourso' or 'euronext'.")
-
-    logger.info(f"Done loading {website} data")
