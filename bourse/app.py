@@ -26,14 +26,13 @@ def configure_server_output():
 
     serving.BaseWSGIServer.log_startup = log_startup_once
 
+
 def get_companies():
-    """Get list of companies from the database."""
     df = db.df_query("SELECT id, name, symbol FROM companies ORDER BY name")
     return df
 
 
 def get_daystocks(cids, start_date, end_date):
-    """Get daily stock data for given company ids and date range."""
     if not cids:
         return pd.DataFrame()
     cid_list = ",".join(str(c) for c in cids)
@@ -49,7 +48,6 @@ def get_daystocks(cids, start_date, end_date):
 
 
 def get_stocks_intraday(cids, start_date, end_date):
-    """Get intraday stock data."""
     if not cids:
         return pd.DataFrame()
     cid_list = ",".join(str(c) for c in cids)
@@ -144,7 +142,6 @@ app.layout = dbc.Container(
 )
 
 
-
 @callback(
     Output("stock-selector", "options"),
     Output("date-range", "min_date_allowed"),
@@ -154,7 +151,6 @@ app.layout = dbc.Container(
     Input("stock-selector", "id"),
 )
 def init_controls(_):
-    """Populate the stock selector and date range on page load."""
     companies = get_companies()
     options = [{"label": row["name"], "value": row["id"]} for _, row in companies.iterrows()]
 
@@ -180,7 +176,6 @@ def init_controls(_):
     Input("scale-type", "value"),
 )
 def render_tab(active_tab, selected_stocks, start_date, end_date, chart_type, scale_type):
-    """Render the content of the active tab."""
     if not selected_stocks or not start_date or not end_date:
         return dbc.Alert("Selectionnez au moins une action et une periode.", color="info")
 
@@ -198,9 +193,7 @@ def render_tab(active_tab, selected_stocks, start_date, end_date, chart_type, sc
     return html.Div()
 
 
-
 def render_cours(cids, start_date, end_date, chart_type, scale_type):
-    """Render the stock price chart (line or candlestick)."""
     df = get_daystocks(cids, start_date, end_date)
     if df.empty:
         return dbc.Alert("Aucune donnee pour cette selection.", color="warning")
@@ -245,7 +238,6 @@ def render_cours(cids, start_date, end_date, chart_type, scale_type):
 
 
 def render_bollinger(cids, start_date, end_date, scale_type):
-    """Render Bollinger Bands for the first selected stock."""
     df = get_daystocks(cids, start_date, end_date)
     if df.empty:
         return dbc.Alert("Aucune donnee pour cette selection.", color="warning")
@@ -323,7 +315,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
 
 
 def render_data_table(cids, start_date, end_date):
-    """Render raw data table with daily stats: min, max, open, close, mean, std."""
     df = get_daystocks(cids, start_date, end_date)
     if df.empty:
         return dbc.Alert("Aucune donnee pour cette selection.", color="warning")
@@ -360,7 +351,6 @@ def render_data_table(cids, start_date, end_date):
 
 
 def render_performance(cids, start_date, end_date):
-    """Custom feature: normalized performance comparison (% change from start)."""
     df = get_daystocks(cids, start_date, end_date)
     if df.empty:
         return dbc.Alert("Aucune donnee pour cette selection.", color="warning")

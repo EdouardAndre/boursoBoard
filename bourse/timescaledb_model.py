@@ -6,8 +6,6 @@ import pandas as pd
 import sqlalchemy
 from loguru import logger
 
-# Pour la table Markets, utilisé aussi dans le constructeur
-# mid, nom, alias, prefix boursorama, symbol SWS
 initial_markets_data = (
     (1, "New York", "nyse", "", "NYSE", ""),
     (2, "London Stock Exchange", "lse", "1u*.L", "LSE", ""),
@@ -18,24 +16,11 @@ initial_markets_data = (
     (7, "Deutsche Borse", "xetra", "1z", "", ""),
     (8, "Bruxelle", "bruxelle", "FF11_", "", "Brussels"),
     (9, "Australie", "asx", "", "ASX", ""),
-    (100, "International", "int", "", "", ""),  # should be last one
+    (100, "International", "int", "", "", ""),
 )
 
 
-def _psql_insert_copy(table, conn, keys, data_iter):  # mehod used by df_write
-    """
-    Execute SQL statement inserting data
-    https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.to_sql.html
-
-    Parameters
-    ----------
-    table : pandas.io.sql.SQLTable
-    conn : sqlalchemy.engine.Engine or sqlalchemy.engine.Connection
-    keys : list of str
-        Column names
-    data_iter : Iterable that iterates the values to be inserted
-    """
-    # gets a DBAPI connection that can provide a cursor
+def _psql_insert_copy(table, conn, keys, data_iter):
     dbapi_conn = conn.connection
     with dbapi_conn.cursor() as cur:
         s_buf = io.StringIO()
@@ -54,18 +39,9 @@ def _psql_insert_copy(table, conn, keys, data_iter):  # mehod used by df_write
 
 
 class TimescaleStockMarketModel:
-    """Bourse model with TimeScaleDB persistence."""
-
     def __init__(
         self, database, user=None, host=None, password=None, port=None, remove_all=False
     ):
-        """Create a TimescaleStockMarketModel
-
-        database -- The name of the persistence database.
-        user     -- Username to connect with to the database. Same as the
-                    database name by default.
-        remove_all -- REMOVE ALL DATA from the database
-        """
         self.__database = database
         self.__user = user or database
         self.__host = host or "localhost"
@@ -75,7 +51,6 @@ class TimescaleStockMarketModel:
         self.__engine = sqlalchemy.create_engine(
             f"timescaledb://{self.__user}:{self.__password}@{self.__host}:{self.__port}/{self.__database}"
         )
-        # markets
         self.market_id = {
             a: i + 1 for i, a in enumerate([m[2] for m in initial_markets_data])
         }
@@ -97,10 +72,6 @@ class TimescaleStockMarketModel:
         self._setup_database()
 
     def _connect_to_database(self, retry_limit=5, retry_delay=1):
-        """
-        With a SQL server running in a Docker, it can take time to connect if all
-        services are started in the same time.
-        """
         for _ in range(retry_limit):
             try:
                 connection = psycopg2.connect(
@@ -116,7 +87,6 @@ class TimescaleStockMarketModel:
         raise Exception("Failed to connect to database after multiple attempts")
 
     def _create_sequence(self, sequence_name, commit=False):
-        """Create a sequence in the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"CREATE SEQUENCE {sequence_name};")
@@ -124,10 +94,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error creating sequence: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _drop_sequence(self, sequence_name, commit=False):
-        """Drop a sequence from the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"DROP SEQUENCE IF EXISTS {sequence_name};")
@@ -135,10 +104,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error dropping sequence: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _create_table(self, table_name, columns_definition, commit=False):
-        """Create a table in the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"CREATE TABLE {table_name} ({columns_definition});")
@@ -146,10 +114,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error creating table: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _drop_table(self, table_name, commit=False):
-        """Drop a table from the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE;")
@@ -157,10 +124,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error dropping table: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _create_hypertable(self, table_name, time_column, commit=False):
-        """Create a hypertable in the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(
@@ -170,10 +136,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error creating hypertable: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _drop_hypertable(self, table_name, commit=False):
-        """Drop a hypertable from the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"SELECT drop_hypertable('{table_name}');")
@@ -181,10 +146,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error dropping hypertable: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _create_index(self, table_name, index_name, columns, commit=False):
-        """Create an index in the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns});")
@@ -192,10 +156,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error creating index: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _drop_index(self, index_name, commit=False):
-        """Drop an index from the database."""
         cursor = self.connection.cursor()
         try:
             cursor.execute(f"DROP INDEX IF EXISTS {index_name};")
@@ -203,10 +166,9 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error dropping index: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _insert_data(self, table_name, data, commit=False):
-        """Insert data into a table in the database."""
         cursor = self.connection.cursor()
         try:
             for row in data:
@@ -215,25 +177,20 @@ class TimescaleStockMarketModel:
                 self.connection.commit()
         except Exception as e:
             print(f"Error inserting data: {e}")
-            self.connection.rollback()  # Rollback the current transaction
+            self.connection.rollback()
 
     def _setup_database(self):
-        """Setup the database schema."""
         print("setup des tables de la base")
         try:
             if len(self.df_query("select id from markets")) == 0:
                 print("Création des tables de la base")
-                # Create sequences
                 self._create_sequence("market_id_seq")
                 self._create_sequence("company_id_seq")
 
-                # Create tables
-                # boursorama : exchange prefix for boursorama
-                # sws : exchange name for Simply Wall Street
                 self._create_table(
                     "markets",
-                    """ id SMALLINT PRIMARY KEY DEFAULT nextval('market_id_seq'), 
-                        name VARCHAR, 
+                    """ id SMALLINT PRIMARY KEY DEFAULT nextval('market_id_seq'),
+                        name VARCHAR,
                         alias VARCHAR,
                         boursorama VARCHAR,
                         sws VARCHAR,
@@ -242,14 +199,14 @@ class TimescaleStockMarketModel:
                 )
                 self._create_table(
                     "companies",
-                    """ id SMALLINT PRIMARY KEY DEFAULT nextval('company_id_seq'), 
+                    """ id SMALLINT PRIMARY KEY DEFAULT nextval('company_id_seq'),
                         name VARCHAR,
                         mid SMALLINT DEFAULT 0,
-                        symbol VARCHAR, 
+                        symbol VARCHAR,
                         isin CHAR(12),
-                        boursorama VARCHAR, 
-                        euronext VARCHAR, 
-                        pea BOOLEAN DEFAULT FALSE, 
+                        boursorama VARCHAR,
+                        euronext VARCHAR,
+                        pea BOOLEAN DEFAULT FALSE,
                         sector1 VARCHAR,
                         sector2 VARCHAR,
                         sector3 VARCHAR
@@ -257,22 +214,22 @@ class TimescaleStockMarketModel:
                 )
                 self._create_table(
                     "stocks",
-                    """ date TIMESTAMPTZ, 
-                        cid SMALLINT, 
-                        value FLOAT4, 
+                    """ date TIMESTAMPTZ,
+                        cid SMALLINT,
+                        value FLOAT4,
                         volume FLOAT4
                     """,
                 )
                 self._create_table(
                     "daystocks",
-                    """ date TIMESTAMPTZ, 
-                        cid SMALLINT, 
+                    """ date TIMESTAMPTZ,
+                        cid SMALLINT,
                         open FLOAT4,
-                        close FLOAT4, 
-                        high FLOAT4, 
-                        low FLOAT4, 
-                        volume FLOAT4, 
-                        mean FLOAT4, 
+                        close FLOAT4,
+                        high FLOAT4,
+                        low FLOAT4,
+                        volume FLOAT4,
+                        mean FLOAT4,
                         std FLOAT4
                     """,
                 )
@@ -280,15 +237,12 @@ class TimescaleStockMarketModel:
                 self._create_table("tags", "name VARCHAR PRIMARY KEY, value VARCHAR")
                 self._create_table("error_dates", "date TIMESTAMPTZ")
 
-                # Create hypertables
                 self._create_hypertable("stocks", "date")
                 self._create_hypertable("daystocks", "date")
 
-                # Create indexes
                 self._create_index("stocks", "idx_cid_stocks", "cid, date DESC")
                 self._create_index("daystocks", "idx_cid_daystocks", "cid, date DESC")
 
-                # Insert initial market data
                 self._insert_data("markets", initial_markets_data)
                 self.connection.commit()
         except Exception as e:
@@ -311,10 +265,7 @@ class TimescaleStockMarketModel:
         self._drop_index("daystocks")
         self.commit()
 
-    # ------------------------------ public methods --------------------------------
-
     def execute(self, query, args=None, cursor=None, commit=False):
-        """Send a Postgres SQL command. No return"""
         if args is None:
             pretty = query
         else:
@@ -345,13 +296,6 @@ class TimescaleStockMarketModel:
         dtype=None,
         method=_psql_insert_copy,
     ):
-        """Write a Pandas dataframe to the Postgres SQL database
-
-        :param query:
-        :param args: arguments for the query
-        :param commit: do a commit after writing
-        :param other args: see https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.to_sql.html
-        """
         self.logger.debug("df_write")
         df.to_sql(
             table,
@@ -366,10 +310,7 @@ class TimescaleStockMarketModel:
         if commit:
             self.commit()
 
-    # general query methods
-
     def raw_query(self, query, args=None, cursor=None):
-        """Return a tuple from a Postgres SQL query"""
         if args is None:
             pretty = query
         else:
@@ -399,14 +340,6 @@ class TimescaleStockMarketModel:
         chunksize=None,
         dtype=None,
     ):
-        """Returns a Pandas dataframe from a Postgres SQL query
-
-        :param query:
-        :param args: arguments for the query
-        :param index_col: index column of the DataFrame
-        :param other args: see https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_sql.html
-        :return: a dataframe
-        """
         if args is not None:
             query = query % args
         self.logger.debug("df_query: %s" % query)
@@ -427,14 +360,6 @@ class TimescaleStockMarketModel:
             res = pd.DataFrame()
         return res
 
-    # system methods
-
     def commit(self):
         if not self.__squash:
             self.connection.commit()
-
-    # getters
-
-    # setters
-
-    # bool queries

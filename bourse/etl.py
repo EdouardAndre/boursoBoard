@@ -1,6 +1,5 @@
 import time
 import os
-import bz2
 import pickle
 import re
 import warnings
@@ -16,21 +15,15 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 TSDB = tsdb.TimescaleStockMarketModel
 DATADIR = "/mnt/data/"
 
-# =================================================
-# Extract, Transform and Load data in the database
-# =================================================
-
 
 class _CompatUnpickler(pickle.Unpickler):
-    """Handle old pandas pickle format (pandas.indexes -> pandas.core.indexes)."""
-
     def find_class(self, module, name):
         if module.startswith("pandas.indexes"):
             module = module.replace("pandas.indexes", "pandas.core.indexes")
         return super().find_class(module, name)
 
+
 def _parse_bourso_file(filepath: str):
-    """Parse a boursorama bz2 pickle file. Returns (datetime, DataFrame) or None."""
     filename = os.path.basename(filepath)
     match = re.match(r"comp[AB]\s+(.+)\.bz2$", filename)
     if not match:
@@ -43,7 +36,7 @@ def _parse_bourso_file(filepath: str):
         return None
 
     try:
-        with bz2.open(filepath, "rb") as f:
+        with open(filepath, "rb") as f:
             df = _CompatUnpickler(f).load()
     except Exception:
         return None
@@ -93,6 +86,7 @@ def _extract_date_from_euronext_filename(filepath: str) -> pd.Timestamp:
         return pd.to_datetime(match.group(1))
     return pd.NaT
 
+
 def _get_or_create_company(db: TSDB, name: str, symbol: str, isin: str = None, market_alias: str = None) -> int:
     rows = db.raw_query("SELECT id FROM companies WHERE symbol = %s", (symbol,))
     if rows and len(rows) > 0:
@@ -133,7 +127,6 @@ def _mark_file_done(db: TSDB, filename: str):
 
 
 def _flush_stocks(db: TSDB, df: pd.DataFrame):
-    """Write a DataFrame to the stocks table."""
     if df.empty:
         return
     out = df[["date", "cid", "value", "volume"]].copy()
@@ -145,7 +138,6 @@ def _flush_stocks(db: TSDB, df: pd.DataFrame):
 
 
 def _flush_daystocks(db: TSDB, df: pd.DataFrame):
-    """Write a DataFrame to the daystocks table."""
     if df.empty:
         return
     out = df[["date", "cid", "open", "close", "high", "low", "volume", "mean", "std"]].copy()
@@ -178,8 +170,6 @@ def _detect_market_alias_from_euronext_market(market_str: str) -> str:
 
 
 def _store_euronext_files(start: str, end: str, db: TSDB):
-    """Load Euronext CSV/XLSX files. They contain daily OHLC so we insert
-    into both stocks and daystocks directly."""
     start_dt = pd.to_datetime(start)
     end_dt = pd.to_datetime(end)
     euronext_dir = os.path.join(DATADIR, "euronext")
@@ -275,12 +265,6 @@ def _store_euronext_files(start: str, end: str, db: TSDB):
 
 
 def _store_bourso_files(start: str, end: str, db: TSDB):
-    """Load ALL boursorama intraday bz2 pickle files into the database.
-
-    1. Read every snapshot file into memory with pandas
-    2. Store all intraday points in `stocks`
-    3. Compute daily OHLC aggregates with pandas groupby -> `daystocks`
-    """
     start_dt = pd.to_datetime(start)
     end_dt = pd.to_datetime(end)
     bourso_dir = os.path.join(DATADIR, "bourso")
@@ -399,17 +383,8 @@ def timer_decorator(func):
     return wrapper
 
 
-
 @timer_decorator
 def store_files(start: str, end: str, website: str, db: TSDB):
-    """Extract, transform and load stock data files into the database.
-
-    Args:
-        start: Start date (inclusive) in YYYY-MM-DD format.
-        end: End date (exclusive) in YYYY-MM-DD format.
-        website: Source website - "bourso" or "euronext".
-        db: TimescaleStockMarketModel database instance.
-    """
     logger.info(f"Loading {website} data from {start} to {end}")
 
     if website == "bourso":
