@@ -29,7 +29,7 @@ services:
       - "8050:8050"
     restart: unless-stopped
     volumes:
-      - /home/baptou/project/EC/teaching/pybd/data:/mnt/data
+      - ./data:/mnt/data
 
 networks:
   boursenet:
