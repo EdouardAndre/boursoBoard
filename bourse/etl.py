@@ -29,10 +29,6 @@ class _CompatUnpickler(pickle.Unpickler):
             module = module.replace("pandas.indexes", "pandas.core.indexes")
         return super().find_class(module, name)
 
-
-# ---- Parsing helpers ----
-
-
 def _parse_bourso_file(filepath: str):
     """Parse a boursorama bz2 pickle file. Returns (datetime, DataFrame) or None."""
     filename = os.path.basename(filepath)
@@ -96,10 +92,6 @@ def _extract_date_from_euronext_filename(filepath: str) -> pd.Timestamp:
     if match:
         return pd.to_datetime(match.group(1))
     return pd.NaT
-
-
-# ---- DB helpers ----
-
 
 def _get_or_create_company(db: TSDB, name: str, symbol: str, isin: str = None, market_alias: str = None) -> int:
     rows = db.raw_query("SELECT id FROM companies WHERE symbol = %s", (symbol,))
@@ -165,9 +157,6 @@ def _flush_daystocks(db: TSDB, df: pd.DataFrame):
     logger.info(f"Flushed {len(out)} daystocks records")
 
 
-# ---- Market detection ----
-
-
 def _detect_market_alias_from_bourso_symbol(symbol: str) -> str:
     for mid, name, alias, bourso_prefix, sws, euronext in tsdb.initial_markets_data:
         if bourso_prefix and symbol.startswith(bourso_prefix):
@@ -186,9 +175,6 @@ def _detect_market_alias_from_euronext_market(market_str: str) -> str:
     if "milan" in market_lower:
         return "milano"
     return "paris"
-
-
-# ---- Store: Euronext ----
 
 
 def _store_euronext_files(start: str, end: str, db: TSDB):
@@ -288,9 +274,6 @@ def _store_euronext_files(start: str, end: str, db: TSDB):
         _flush_daystocks(db, pd.DataFrame(daystocks_rows))
 
 
-# ---- Store: Boursorama ----
-
-
 def _store_bourso_files(start: str, end: str, db: TSDB):
     """Load ALL boursorama intraday bz2 pickle files into the database.
 
@@ -311,7 +294,6 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
         logger.info("Bourso data already imported for this range, skipping")
         return
 
-    # ---- Step 1: Collect and group files by day ----
     files_by_day = defaultdict(list)
     for year_dir in sorted(os.listdir(bourso_dir)):
         year_path = os.path.join(bourso_dir, year_dir)
@@ -333,11 +315,10 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
     total_files = sum(len(v) for v in files_by_day.values())
     logger.info(f"Bourso: {total_files} files across {total_days} days")
 
-    # ---- Step 2: Create companies from the first day's data ----
     company_cache = {}
 
     first_day = sorted(files_by_day.keys())[0]
-    for fpath in files_by_day[first_day][:2]:  # read one compA + one compB
+    for fpath in files_by_day[first_day][:2]:
         result = _parse_bourso_file(fpath)
         if result is not None:
             for _, row in result.iterrows():
@@ -350,7 +331,6 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
 
     logger.info(f"Created/cached {len(company_cache)} companies from first day")
 
-    # ---- Step 3: Process each day - read all files, build stocks DataFrame ----
     days_processed = 0
 
     for day_str in sorted(files_by_day.keys()):
@@ -365,11 +345,9 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
         if not day_dfs:
             continue
 
-        # Concatenate all snapshots for this day
         day_df = pd.concat(day_dfs, ignore_index=True)
         day_df = day_df.dropna(subset=["last"])
 
-        # Ensure all companies exist
         new_symbols = set(day_df["symbol"].unique()) - set(company_cache.keys())
         if new_symbols:
             for _, row in day_df[day_df["symbol"].isin(new_symbols)].drop_duplicates("symbol").iterrows():
@@ -379,24 +357,21 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
                     cid = _get_or_create_company(db, row["name"], symbol, market_alias=market_alias)
                     company_cache[symbol] = cid
 
-        # Map symbols to cids using pandas
         day_df["cid"] = day_df["symbol"].map(company_cache)
         day_df = day_df.dropna(subset=["cid"])
         day_df["cid"] = day_df["cid"].astype(int)
 
-        # ---- Insert into stocks (all intraday points) ----
         stocks_df = day_df[["datetime", "cid", "last", "volume"]].rename(
             columns={"datetime": "date", "last": "value"}
         )
         _flush_stocks(db, stocks_df)
 
-        # ---- Compute daystocks with pandas groupby ----
         daily = day_df.groupby("cid").agg(
             open=("last", "first"),
             close=("last", "last"),
             high=("last", "max"),
             low=("last", "min"),
-            volume=("volume", "last"),  # last reported volume of the day
+            volume=("volume", "last"),
             mean=("last", "mean"),
             std=("last", "std"),
         ).reset_index()
@@ -414,9 +389,6 @@ def _store_bourso_files(start: str, end: str, db: TSDB):
     logger.info(f"Bourso import complete: {days_processed} days, all intraday data stored")
 
 
-# ---- Decorator ----
-
-
 def timer_decorator(func):
     def wrapper(*args, **kwargs):
         start_time = time.time()
@@ -426,8 +398,6 @@ def timer_decorator(func):
         return result
     return wrapper
 
-
-# ---- Public API ----
 
 
 @timer_decorator

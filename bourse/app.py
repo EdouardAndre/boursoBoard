@@ -19,11 +19,6 @@ app = dash.Dash(
 )
 db = tsdb.TimescaleStockMarketModel("bourse", "bourse", "database", "password")
 
-# =====================================================================
-# Helper functions to query the database
-# =====================================================================
-
-
 def get_companies():
     """Get list of companies from the database."""
     df = db.df_query("SELECT id, name, symbol FROM companies ORDER BY name")
@@ -62,16 +57,11 @@ def get_stocks_intraday(cids, start_date, end_date):
     return df
 
 
-# =====================================================================
-# Layout
-# =====================================================================
-
 app.layout = dbc.Container(
     [
         dbc.Row(
             dbc.Col(html.H1("Bourse Dashboard", className="text-center my-4")),
         ),
-        # Controls row
         dbc.Row(
             [
                 dbc.Col(
@@ -130,7 +120,6 @@ app.layout = dbc.Container(
             ],
             className="mb-4",
         ),
-        # Tabs
         dbc.Tabs(
             [
                 dbc.Tab(label="Cours", tab_id="tab-cours"),
@@ -148,10 +137,6 @@ app.layout = dbc.Container(
 )
 
 
-# =====================================================================
-# Callbacks
-# =====================================================================
-
 
 @callback(
     Output("stock-selector", "options"),
@@ -159,7 +144,7 @@ app.layout = dbc.Container(
     Output("date-range", "max_date_allowed"),
     Output("date-range", "start_date"),
     Output("date-range", "end_date"),
-    Input("stock-selector", "id"),  # fires once on load
+    Input("stock-selector", "id"),
 )
 def init_controls(_):
     """Populate the stock selector and date range on page load."""
@@ -167,7 +152,6 @@ def init_controls(_):
     logger.info(f"Found {len(companies)} companies in database")
     options = [{"label": row["name"], "value": row["id"]} for _, row in companies.iterrows()]
 
-    # Try daystocks first, fallback to stocks
     dates = db.df_query("SELECT MIN(date) as min_d, MAX(date) as max_d FROM daystocks")
     if dates.empty or pd.isna(dates["min_d"].iloc[0]):
         dates = db.df_query("SELECT MIN(date) as min_d, MAX(date) as max_d FROM stocks")
@@ -209,10 +193,6 @@ def render_tab(active_tab, selected_stocks, start_date, end_date, chart_type, sc
 
     return html.Div()
 
-
-# =====================================================================
-# Tab renderers
-# =====================================================================
 
 
 def render_cours(cids, start_date, end_date, chart_type, scale_type):
@@ -266,7 +246,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
     if df.empty:
         return dbc.Alert("Aucune donnee pour cette selection.", color="warning")
 
-    # Build a selector for which stock to show Bollinger bands
     stock_names = df[["cid", "name"]].drop_duplicates()
     tabs_content = []
 
@@ -275,7 +254,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
         name = stock_row["name"]
         group = df[df["cid"] == cid].sort_values("date").copy()
 
-        # Compute Bollinger Bands (20-day SMA, 2 std dev)
         window = 20
         group["sma"] = group["close"].rolling(window=window).mean()
         group["std_val"] = group["close"].rolling(window=window).std()
@@ -284,7 +262,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
 
         fig = go.Figure()
 
-        # Upper band
         fig.add_trace(
             go.Scatter(
                 x=group["date"],
@@ -294,7 +271,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
                 name="Bande superieure",
             )
         )
-        # Lower band (fill between)
         fig.add_trace(
             go.Scatter(
                 x=group["date"],
@@ -306,7 +282,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
                 name="Bande inferieure",
             )
         )
-        # SMA
         fig.add_trace(
             go.Scatter(
                 x=group["date"],
@@ -316,7 +291,6 @@ def render_bollinger(cids, start_date, end_date, scale_type):
                 name=f"SMA {window}j",
             )
         )
-        # Close price
         fig.add_trace(
             go.Scatter(
                 x=group["date"],
@@ -350,7 +324,6 @@ def render_data_table(cids, start_date, end_date):
     if df.empty:
         return dbc.Alert("Aucune donnee pour cette selection.", color="warning")
 
-    # Build the table: one row per day per stock
     df = df.sort_values(["date", "name"])
     table_df = pd.DataFrame(
         {
@@ -417,7 +390,6 @@ def render_performance(cids, start_date, end_date):
         height=600,
     )
 
-    # Also show a volume subplot
     vol_fig = go.Figure()
     for name, group in df.groupby("name"):
         group = group.sort_values("date")
@@ -442,10 +414,6 @@ def render_performance(cids, start_date, end_date):
 
     return html.Div([dcc.Graph(figure=fig), dcc.Graph(figure=vol_fig)])
 
-
-# =====================================================================
-# Main
-# =====================================================================
 
 if __name__ == "__main__":
     logger.info("Importing data into the database")
